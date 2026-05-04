@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 from config import DATABASE_URL
 
@@ -21,3 +21,15 @@ def get_db():
 def init_db():
     import models  # noqa: F401
     Base.metadata.create_all(bind=engine)
+    _ensure_schema()
+
+
+def _ensure_schema():
+    with engine.begin() as conn:
+        if engine.dialect.name == "sqlite":
+            columns = {
+                row[1]
+                for row in conn.execute(text("PRAGMA table_info(cvs)")).fetchall()
+            }
+            if "candidate_profile" not in columns:
+                conn.execute(text("ALTER TABLE cvs ADD COLUMN candidate_profile TEXT"))

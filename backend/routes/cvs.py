@@ -1,14 +1,17 @@
 import json
+import logging
+from time import perf_counter
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from db import get_db
-from llm import OllamaError, call_ollama
+from llm import LLMError, call_llm_json
 from models import CV, DetailedEvaluation, Job
 from prompts import DEEP_EVAL_PROMPT
 
 router = APIRouter(prefix="/api/cvs", tags=["cvs"])
+log = logging.getLogger(__name__)
 
 
 @router.get("/{cv_id}")
@@ -35,6 +38,7 @@ def get_cv(cv_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{cv_id}/evaluate")
 async def evaluate_cv(cv_id: int, db: Session = Depends(get_db)):
+    started = perf_counter()
     cv = db.query(CV).filter(CV.id == cv_id).first()
     if not cv:
         raise HTTPException(404, "CV not found.")
@@ -49,8 +53,8 @@ async def evaluate_cv(cv_id: int, db: Session = Depends(get_db)):
     )
 
     try:
-        evaluation = await call_ollama(prompt)
-    except OllamaError as e:
+        evaluation = await call_llm_json(prompt, max_output_tokens=3072, retries=1)
+    except LLMError as e:
         raise HTTPException(502, str(e))
 
     if isinstance(evaluation, dict) and not evaluation.get("candidate_name"):
@@ -59,4 +63,9 @@ async def evaluate_cv(cv_id: int, db: Session = Depends(get_db)):
     row = DetailedEvaluation(cv_id=cv.id, evaluation_json=json.dumps(evaluation))
     db.add(row)
     db.commit()
+    log.info(
+        "evaluate_cv cv_id=%s elapsed_ms=%.1f",
+        cv_id,
+        (perf_counter() - started) * 1000,
+    )
     return evaluation

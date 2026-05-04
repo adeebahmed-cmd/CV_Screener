@@ -45,18 +45,25 @@ export default function JobDetail() {
   async function rank() {
     try {
       setRanking(true)
+      if (cvFiles.length > 0) {
+        setUploading(true)
+        await api.uploadCVs(id, cvFiles)
+        setCvFiles([])
+        await refresh()
+      }
       await api.rank(id)
       toast.success('Ranking complete.')
       await refresh()
     } catch (e) {
       toast.error(e.message)
     } finally {
+      setUploading(false)
       setRanking(false)
     }
   }
 
   if (!job) {
-    return <div className="text-slate-500">Loading…</div>
+    return <div className="text-slate-500">Loading...</div>
   }
 
   const jd = job.jd_json || {}
@@ -64,10 +71,10 @@ export default function JobDetail() {
 
   return (
     <div className="space-y-8">
-      <LoadingOverlay show={uploading} message="Parsing and storing CVs…" />
+      <LoadingOverlay show={uploading} message="Parsing and storing CVs..." />
       <LoadingOverlay
         show={ranking}
-        message="Ranking candidates with local LLM… this can take up to 2 minutes."
+        message="Uploading any selected CVs and ranking candidates..."
       />
 
       <div>
@@ -86,11 +93,11 @@ export default function JobDetail() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
           <div>
             <span className="text-slate-500">Role:</span>{' '}
-            <span className="font-medium">{jd.role || '—'}</span>
+            <span className="font-medium">{jd.role || '-'}</span>
           </div>
           <div>
             <span className="text-slate-500">Experience:</span>{' '}
-            <span className="font-medium">{jd.experience_required || '—'}</span>
+            <span className="font-medium">{jd.experience_required || '-'}</span>
           </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -118,13 +125,13 @@ export default function JobDetail() {
         </p>
         <FileDropzone multiple maxFiles={5} files={cvFiles} onChange={setCvFiles} />
         <div className="flex gap-2 justify-end mt-4">
-          <button className="btn-secondary" onClick={upload} disabled={uploading || cvFiles.length === 0}>
+          <button className="btn-secondary" onClick={upload} disabled={uploading || ranking || cvFiles.length === 0}>
             <Upload size={16} /> Upload
           </button>
           <button
             className="btn-primary"
             onClick={rank}
-            disabled={ranking || job.cvs.length === 0}
+            disabled={ranking || uploading || (job.cvs.length === 0 && cvFiles.length === 0)}
           >
             <BarChart3 size={16} /> Rank Candidates
           </button>

@@ -1,86 +1,128 @@
 import asyncio
 import json
 import logging
+import os
+import re
+from pathlib import Path
 from typing import Any, Optional
 
-import httpx
-
-from config import OLLAMA_MODEL, OLLAMA_URL
+import google.generativeai as genai
+from dotenv import load_dotenv
 
 log = logging.getLogger(__name__)
 
+load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
-class OllamaError(RuntimeError):
+GEMINI_MODEL = "gemini-2.5-flash-lite"
+model = genai.GenerativeModel(GEMINI_MODEL)
+
+
+class LLMError(RuntimeError):
     pass
 
 
-async def _get_settings() -> tuple[str, str]:
-    """Read the latest URL/model from DB, falling back to env defaults."""
-    try:
-        from db import SessionLocal
-        from models import Setting
-
-        db = SessionLocal()
-        try:
-            url_row = db.query(Setting).filter(Setting.key == "ollama_url").first()
-            model_row = db.query(Setting).filter(Setting.key == "model").first()
-            url = url_row.value if url_row else OLLAMA_URL
-            model = model_row.value if model_row else OLLAMA_MODEL
-            return url, model
-        finally:
-            db.close()
-    except Exception:
-        return OLLAMA_URL, OLLAMA_MODEL
+def run_llm(prompt: str, max_output_tokens: int = 4096) -> str:
+    response = model.generate_content(
+        prompt,
+        generation_config=genai.types.GenerationConfig(
+            temperature=0.1,
+            top_p=0.9,
+            response_mime_type="application/json",
+            max_output_tokens=max_output_tokens,
+        ),
+    )
+    return response.text
 
 
-async def call_ollama(prompt: str, model: Optional[str] = None) -> Any:
-    """Call Ollama /api/generate with format=json. Retries 3x. Returns parsed JSON."""
-    url, default_model = await _get_settings()
-    model_name = model or default_model
-    last_err: Optional[Exception] = None
+def _extract_json(raw: str) -> Any:
+    text = raw.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    return json.loads(text)
 
-    for attempt in range(3):
-        try:
-            async with httpx.AsyncClient(timeout=300) as client:
-                r = await client.post(
-                    f"{url.rstrip('/')}/api/generate",
-                    json={
-                        "model": model_name,
-                        "prompt": prompt,
-                        "format": "json",
-                        "stream": False,
-                        "options": {"temperature": 0.2},
-                    },
-                )
-                r.raise_for_status()
-                payload = r.json()
-                raw = payload.get("response", "")
-                if not raw:
-                    raise OllamaError("Empty response from Ollama.")
-                try:
-                    return json.loads(raw)
-                except json.JSONDecodeError as e:
-                    last_err = OllamaError(f"Invalid JSON from model: {e}. Raw: {raw[:500]}")
-                    log.warning("Attempt %s: invalid JSON, retrying", attempt + 1)
-        except httpx.HTTPError as e:
-            last_err = OllamaError(f"Ollama HTTP error: {e}")
-            log.warning("Attempt %s: HTTP error %s", attempt + 1, e)
-        await asyncio.sleep(1 + attempt)
 
-    raise OllamaError(
-        f"LLM call failed after 3 attempts. Is Ollama running at {url} with model '{model_name}'? "
-        f"Last error: {last_err}"
+def _likely_truncated_json(raw: str, error: json.JSONDecodeError) -> bool:
+    msg = str(error)
+    text = raw.rstrip()
+    if "Unterminated string" in msg:
+        return True
+    if "Expecting value" in msg or "Expecting ',' delimiter" in msg:
+        return text.endswith(("{", "[", ":", ",", "\""))
+    return not text.endswith(("}", "]"))
+
+
+def _is_quota_error(message: str) -> bool:
+    low = message.lower()
+    return (
+        "429" in low
+        and (
+            "quota exceeded" in low
+            or "rate limit" in low
+            or "generate_content_free_tier_requests" in low
+        )
     )
 
 
-async def ping_ollama() -> tuple[bool, list[str], Optional[str]]:
-    url, _ = await _get_settings()
+def _friendly_quota_error(message: str) -> str:
+    retry_match = re.search(r"Please retry in\s+([0-9.]+)s", message, re.IGNORECASE)
+    if not retry_match:
+        retry_match = re.search(r"retry_delay\s*\{\s*seconds:\s*(\d+)", message, re.IGNORECASE)
+    retry_hint = ""
+    if retry_match:
+        retry_hint = f" Retry after about {round(float(retry_match.group(1)))} seconds."
+    return (
+        f"Gemini quota exceeded for model '{GEMINI_MODEL}'."
+        f"{retry_hint} Reduce repeated analyze/rank calls or upgrade Google AI Studio billing."
+    )
+
+
+async def call_llm_json(prompt: str, max_output_tokens: int = 4096, retries: int = 2) -> Any:
+    """Call Gemini through run_llm and return parsed JSON."""
+    if not os.getenv("GOOGLE_API_KEY"):
+        raise LLMError("GOOGLE_API_KEY is not set.")
+
+    last_err: Optional[Exception] = None
+    current_max_output_tokens = max_output_tokens
+
+    for attempt in range(retries + 1):
+        try:
+            raw = await asyncio.to_thread(run_llm, prompt, current_max_output_tokens)
+            if not raw:
+                raise LLMError("Empty response from Gemini.")
+            try:
+                return _extract_json(raw)
+            except json.JSONDecodeError as e:
+                last_err = LLMError(f"Invalid JSON from model: {e}. Raw: {raw[:500]}")
+                if _likely_truncated_json(raw, e):
+                    current_max_output_tokens = min(current_max_output_tokens * 2, 8192)
+                log.warning("Attempt %s: invalid JSON, retrying", attempt + 1)
+        except Exception as e:
+            if _is_quota_error(str(e)):
+                raise LLMError(_friendly_quota_error(str(e))) from e
+            last_err = e
+            log.warning("Attempt %s: LLM error %s", attempt + 1, e)
+        if attempt < retries:
+            await asyncio.sleep(1 + attempt)
+
+    raise LLMError(f"LLM call failed after {retries + 1} attempts with Gemini. Last error: {last_err}")
+
+
+async def ping_llm() -> tuple[bool, list[str], Optional[str]]:
+    if not os.getenv("GOOGLE_API_KEY"):
+        return False, [], "GOOGLE_API_KEY is not set."
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(f"{url.rstrip('/')}/api/tags")
-            r.raise_for_status()
-            data = r.json()
-            models = [m.get("name", "") for m in data.get("models", [])]
-            return True, models, None
+        await asyncio.wait_for(
+            asyncio.to_thread(run_llm, "Return only this JSON: {\"ok\": true}", 64),
+            timeout=20,
+        )
+        return True, [GEMINI_MODEL], None
+    except asyncio.TimeoutError:
+        return False, [GEMINI_MODEL], "Gemini health check timed out."
     except Exception as e:
-        return False, [], str(e)
+        return False, [GEMINI_MODEL], str(e)

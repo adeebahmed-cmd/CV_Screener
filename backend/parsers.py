@@ -15,6 +15,19 @@ _HEADER_WORDS = {
     "personal details", "personal information", "bio-data", "biodata",
 }
 
+_PROFILE_HINTS = (
+    "summary", "profile", "experience", "employment", "work history", "skills",
+    "competencies", "expertise", "responsibilities", "achievements", "education",
+    "certification", "certifications", "projects", "leadership", "tools", "languages",
+)
+
+_PROFILE_KEYWORDS = (
+    "experience", "years", "skill", "skills", "managed", "management", "lead", "led",
+    "director", "program", "project", "therapy", "rehabilitation", "clinical", "health",
+    "operations", "budget", "training", "compliance", "evaluation", "partnership",
+    "certified", "certification", "master", "bachelor", "phd", "mba",
+)
+
 
 class ParseError(ValueError):
     pass
@@ -87,3 +100,53 @@ def guess_candidate_name(text: str, fallback_filename: Optional[str] = None) -> 
     if fallback_filename:
         return Path(fallback_filename).stem
     return "Unknown Candidate"
+
+
+def build_candidate_profile(text: str, max_chars: int = 2200) -> str:
+    lines = [line.strip(" -\t") for line in text.splitlines()]
+    lines = [line for line in lines if line]
+
+    selected: list[str] = []
+    seen: set[str] = set()
+
+    def add(line: str) -> None:
+        low = line.lower()
+        if low in seen:
+            return
+        if "@" in line or "http" in low:
+            return
+        if re.search(r"\+?\d[\d\s().-]{7,}\d", line):
+            return
+        seen.add(low)
+        selected.append(line)
+
+    for line in lines[:12]:
+        if len(line) <= 160:
+            add(line)
+
+    for idx, line in enumerate(lines):
+        low = line.lower()
+        if any(hint in low for hint in _PROFILE_HINTS):
+            add(line)
+            for follow in lines[idx + 1: idx + 5]:
+                if len(follow) <= 180:
+                    add(follow)
+
+    for line in lines:
+        low = line.lower()
+        if any(keyword in low for keyword in _PROFILE_KEYWORDS):
+            add(line)
+
+    profile = "\n".join(selected)
+    if len(profile) <= max_chars:
+        return profile
+
+    trimmed: list[str] = []
+    total = 0
+    for line in selected:
+        extra = len(line) + (1 if trimmed else 0)
+        if total + extra > max_chars:
+            break
+        trimmed.append(line)
+        total += extra
+    return "\n".join(trimmed)

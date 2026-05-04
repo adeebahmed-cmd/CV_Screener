@@ -74,7 +74,7 @@ export default function Settings() {
             className="input"
             value={form.model}
             onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}
-            placeholder="qwen2.5:7b-instruct"
+            placeholder="phi3:mini"
           />
           <p className="text-xs text-slate-500 mt-1">
             Any model pulled with <code>ollama pull &lt;name&gt;</code> will work.
@@ -106,7 +106,7 @@ export default function Settings() {
               <div className="flex flex-wrap gap-2">
                 {status.models_available.length === 0 && (
                   <span className="text-sm text-slate-500">
-                    None pulled yet. Run <code>ollama pull qwen2.5:7b-instruct</code>.
+                    None pulled yet. Run <code>ollama pull phi3:mini</code>.
                   </span>
                 )}
                 {status.models_available.map((m) => (

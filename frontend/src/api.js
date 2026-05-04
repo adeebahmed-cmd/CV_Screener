@@ -23,6 +23,12 @@ export const api = {
   // Jobs
   listJobs: () => request('/jobs'),
   getJob: (id) => request(`/jobs/${id}`),
+  updateJob: (id, { title, raw_text, jd_json }) =>
+    request(`/jobs/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, raw_text, jd_json }),
+    }),
   deleteJob: (id) => request(`/jobs/${id}`, { method: 'DELETE' }),
 
   analyzeJDText: ({ title, text }) =>

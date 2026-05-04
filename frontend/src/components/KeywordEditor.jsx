@@ -1,5 +1,5 @@
-import { useMemo } from 'react'
-import { Trash2 } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Plus, Trash2 } from 'lucide-react'
 
 const CATEGORIES = [
   'Domain',
@@ -13,6 +13,13 @@ const CATEGORIES = [
 ]
 
 export default function KeywordEditor({ model, onChange }) {
+  const [draft, setDraft] = useState({
+    keyword: '',
+    category: CATEGORIES[0],
+    weight: 5,
+    type: 'must-have',
+  })
+
   const grouped = useMemo(() => {
     const map = {}
     ;(model?.keywords || []).forEach((k, idx) => {
@@ -36,6 +43,29 @@ export default function KeywordEditor({ model, onChange }) {
     onChange({ ...model, ...patch })
   }
 
+  function addKeyword() {
+    const keyword = draft.keyword.trim()
+    if (!keyword) return
+    onChange({
+      ...model,
+      keywords: [
+        ...(model.keywords || []),
+        {
+          keyword,
+          category: draft.category,
+          weight: Number(draft.weight) || 5,
+          type: draft.type,
+        },
+      ],
+    })
+    setDraft({
+      keyword: '',
+      category: draft.category,
+      weight: 5,
+      type: 'must-have',
+    })
+  }
+
   const catOrder = [...CATEGORIES, ...Object.keys(grouped).filter((c) => !CATEGORIES.includes(c))]
 
   return (
@@ -57,6 +87,60 @@ export default function KeywordEditor({ model, onChange }) {
               value={model.experience_required || ''}
               onChange={(e) => updateMeta({ experience_required: e.target.value })}
             />
+          </div>
+        </div>
+      </div>
+
+      <div className="card p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-slate-900">Add Keyword</h3>
+          <button className="btn-primary" type="button" onClick={addKeyword} disabled={!draft.keyword.trim()}>
+            <Plus size={16} /> Add
+          </button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+          <div className="md:col-span-5">
+            <label className="label">Keyword</label>
+            <input
+              className="input"
+              value={draft.keyword}
+              onChange={(e) => setDraft((d) => ({ ...d, keyword: e.target.value }))}
+              placeholder="Add a missing keyword"
+            />
+          </div>
+          <div className="md:col-span-3">
+            <label className="label">Category</label>
+            <select
+              className="input"
+              value={draft.category}
+              onChange={(e) => setDraft((d) => ({ ...d, category: e.target.value }))}
+            >
+              {CATEGORIES.map((category) => (
+                <option key={category} value={category}>{category}</option>
+              ))}
+            </select>
+          </div>
+          <div className="md:col-span-2">
+            <label className="label">Weight</label>
+            <input
+              type="number"
+              min="1"
+              max="10"
+              className="input"
+              value={draft.weight}
+              onChange={(e) => setDraft((d) => ({ ...d, weight: Number(e.target.value) }))}
+            />
+          </div>
+          <div className="md:col-span-2">
+            <label className="label">Type</label>
+            <select
+              className="input"
+              value={draft.type}
+              onChange={(e) => setDraft((d) => ({ ...d, type: e.target.value }))}
+            >
+              <option value="must-have">must-have</option>
+              <option value="good-to-have">good-to-have</option>
+            </select>
           </div>
         </div>
       </div>

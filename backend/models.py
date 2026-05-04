@@ -23,6 +23,7 @@ class CV(Base):
     candidate_name = Column(String(255))
     filename = Column(String(255))
     raw_text = Column(Text, nullable=False)
+    candidate_profile = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     job = relationship("Job", back_populates="cvs")

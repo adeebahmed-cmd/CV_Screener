@@ -37,7 +37,7 @@ You only need to do this **once** per machine.
 Open a terminal and run:
 
 ```bash
-ollama pull qwen2.5:7b-instruct
+ollama pull phi3:mini
 ```
 
 This downloads the LLM (~4.7 GB) and caches it locally. You can switch to any other Ollama model
@@ -108,7 +108,7 @@ survive restarts.
 
 ### "Model not found"
 - Open a terminal and run `ollama list` to see installed models.
-- Pull the model you selected in Settings: `ollama pull qwen2.5:7b-instruct`
+- Pull the model you selected in Settings: `ollama pull phi3:mini`
 - Return to Settings and click **Test connection**.
 
 ### Port already in use (8000 or 5173)

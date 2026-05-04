@@ -4,6 +4,7 @@ Your task is to extract structured hiring criteria from the given Job Descriptio
 
 Follow these rules strictly:
 1. Extract only relevant, role-specific keywords (avoid generic fluff).
+1a. Return at most 25 keywords total. Keep only the most important and non-overlapping items.
 2. Categorize all keywords into the following buckets:
    - Domain
    - Capability (functional skills)
@@ -22,6 +23,7 @@ Follow these rules strictly:
    - Required experience range
    - Role seniority
 5. Do NOT invent keywords not implied by the JD.
+6. Keep the JSON concise. Do not repeat similar keywords with minor wording changes.
 
 Output strictly in JSON format as follows:
 
