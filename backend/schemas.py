@@ -45,7 +45,9 @@ class JobDetail(BaseModel):
 
 
 class SettingsPayload(BaseModel):
+    ollama_url: Optional[str] = None
     model: Optional[str] = None
+    ranking_model: Optional[str] = None
 
 
 class HealthResponse(BaseModel):

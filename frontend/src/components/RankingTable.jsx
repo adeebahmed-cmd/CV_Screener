@@ -1,14 +1,42 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowUpDown, Search } from 'lucide-react'
+import { ArrowUpDown, Search, Download } from 'lucide-react'
 import { scoreTone } from '../lib/utils.js'
+
+function exportCSV(rows, jobId) {
+  const escape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
+  const lines = [
+    ['Rank', 'Candidate', 'Score', 'Summary'].join(','),
+    ...rows.map((r) =>
+      [r.rank ?? '', escape(r.candidate_name), Math.round(Number(r.score) || 0), escape(r.summary)].join(',')
+    ),
+  ]
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `ranking-job-${jobId}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function normalizeRanking(ranking) {
+  if (Array.isArray(ranking)) return ranking
+  if (ranking && typeof ranking === 'object') {
+    for (const key of ['ranking', 'candidates', 'results', 'rankings', 'rank']) {
+      if (Array.isArray(ranking[key])) return ranking[key]
+    }
+  }
+  return []
+}
 
 export default function RankingTable({ jobId, ranking, cvs }) {
   const navigate = useNavigate()
   const [sort, setSort] = useState({ key: 'rank', dir: 'asc' })
+  const rankingRows = normalizeRanking(ranking)
 
   const rows = useMemo(() => {
-    const enriched = (ranking || []).map((r) => {
+    const enriched = rankingRows.map((r) => {
       const cv = cvs.find(
         (c) =>
           (c.candidate_name || '').toLowerCase() === (r.candidate_name || '').toLowerCase(),
@@ -22,17 +50,17 @@ export default function RankingTable({ jobId, ranking, cvs }) {
       if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir
       return String(av || '').localeCompare(String(bv || '')) * dir
     })
-  }, [ranking, cvs, sort])
+  }, [rankingRows, cvs, sort])
 
   function toggleSort(key) {
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }))
   }
 
-  if (!ranking || ranking.length === 0) {
+  if (rankingRows.length === 0) {
     return (
       <div className="card p-8 text-center text-slate-500">
         <Search className="mx-auto mb-2" />
-        No ranking yet. Upload CVs and click "Rank Candidates".
+        No ranking yet. Upload CVs and click "Upload & Rank Candidates".
       </div>
     )
   }
@@ -51,6 +79,11 @@ export default function RankingTable({ jobId, ranking, cvs }) {
 
   return (
     <div className="card overflow-hidden">
+      <div className="px-4 py-3 border-b border-slate-200 flex justify-end">
+        <button className="btn-secondary py-1.5 text-xs" onClick={() => exportCSV(rows, jobId)}>
+          <Download size={14} /> Export CSV
+        </button>
+      </div>
       <table className="w-full">
         <thead className="bg-slate-50 border-b border-slate-200">
           <tr>

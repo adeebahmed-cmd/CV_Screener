@@ -63,13 +63,14 @@ export const api = {
 
   getCV: (id) => request(`/cvs/${id}`),
   evaluateCV: (id) => request(`/cvs/${id}/evaluate`, { method: 'POST' }),
+  deleteCV: (id) => request(`/cvs/${id}`, { method: 'DELETE' }),
 
   // Settings
   getSettings: () => request('/settings'),
-  updateSettings: ({ ollama_url, model }) =>
+  updateSettings: ({ ollama_url, model, ranking_model }) =>
     request('/settings', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ollama_url, model }),
+      body: JSON.stringify({ ollama_url, model, ranking_model }),
     }),
 }

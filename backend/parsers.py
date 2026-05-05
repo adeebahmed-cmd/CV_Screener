@@ -102,7 +102,7 @@ def guess_candidate_name(text: str, fallback_filename: Optional[str] = None) -> 
     return "Unknown Candidate"
 
 
-def build_candidate_profile(text: str, max_chars: int = 2200) -> str:
+def build_candidate_profile(text: str, max_chars: int = 5500) -> str:
     lines = [line.strip(" -\t") for line in text.splitlines()]
     lines = [line for line in lines if line]
 

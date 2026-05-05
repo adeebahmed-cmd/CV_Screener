@@ -4,7 +4,7 @@ import { CheckCircle2, XCircle, Save, Plug } from 'lucide-react'
 import { api } from '../api.js'
 
 export default function Settings() {
-  const [form, setForm] = useState({ ollama_url: '', model: '' })
+  const [form, setForm] = useState({ ollama_url: '', model: '', ranking_model: '' })
   const [loading, setLoading] = useState(true)
   const [testing, setTesting] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -69,15 +69,27 @@ export default function Settings() {
           />
         </div>
         <div>
-          <label className="label">Model</label>
+          <label className="label">Default Model</label>
           <input
             className="input"
             value={form.model}
             onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}
-            placeholder="phi3:mini"
+            placeholder="qwen2.5:1.5b"
           />
           <p className="text-xs text-slate-500 mt-1">
-            Any model pulled with <code>ollama pull &lt;name&gt;</code> will work.
+            Used for JD analysis and all other operations. Any model pulled with <code>ollama pull &lt;name&gt;</code> will work.
+          </p>
+        </div>
+        <div>
+          <label className="label">Ranking Model <span className="text-slate-400 font-normal">(optional)</span></label>
+          <input
+            className="input"
+            value={form.ranking_model}
+            onChange={(e) => setForm((f) => ({ ...f, ranking_model: e.target.value }))}
+            placeholder="Leave blank to use Default Model"
+          />
+          <p className="text-xs text-slate-500 mt-1">
+            Uses a separate, more capable model only when ranking CVs. E.g. <code>phi3:mini</code> for better ranking quality.
           </p>
         </div>
         <div className="flex gap-2 justify-end">

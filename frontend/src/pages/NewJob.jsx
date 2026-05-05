@@ -21,7 +21,19 @@ export default function NewJob() {
   const [analyzing, setAnalyzing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [rawText, setRawText] = useState('')
+  const [llmModelName, setLlmModelName] = useState('local Ollama model')
   const [model, setModel] = useState(null)
+
+  useEffect(() => {
+    api
+      .getSettings()
+      .then((settings) => {
+        if (settings?.model) {
+          setLlmModelName(settings.model)
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!isEdit) return
@@ -80,7 +92,7 @@ export default function NewJob() {
         ? await api.updateJob(id, payload)
         : await api.saveJob(payload)
       toast.success(isEdit ? 'Job model updated.' : 'Job model saved.')
-      navigate(`/jobs/${job.id}`)
+      navigate(`/jobs/${job.id}`, isEdit ? { state: { needsRerank: true } } : {})
     } catch (e) {
       toast.error(e.message || 'Save failed.')
     } finally {
@@ -96,7 +108,7 @@ export default function NewJob() {
     <div className="space-y-6">
       <LoadingOverlay
         show={analyzing}
-        message="Extracting keywords with Gemini. This can take a few seconds."
+        message={`Extracting keywords with ${llmModelName} via Ollama. This can take a few seconds.`}
       />
       <LoadingOverlay show={saving} message={isEdit ? 'Updating job model...' : 'Saving job model...'} />
 
