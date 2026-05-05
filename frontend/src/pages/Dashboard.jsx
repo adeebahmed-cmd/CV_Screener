@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Briefcase, FileUser, Plus, Clock, ArrowRight, Pencil, Trash2 } from 'lucide-react'
+import { Briefcase, FileUser, Plus, Clock, ArrowRight, Pencil, Trash2, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
+import ConfirmDialog from '../components/ConfirmDialog.jsx'
 import { api } from '../api.js'
 import { formatDate } from '../lib/utils.js'
 
@@ -25,6 +26,9 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const [stats, setStats] = useState({ jobs: 0, cvs: 0 })
   const [jobs, setJobs] = useState([])
+  const [confirmDelete, setConfirmDelete] = useState(null)
+  const [showAll, setShowAll] = useState(false)
+  const PAGE_SIZE = 8
 
   async function refresh() {
     const [nextStats, nextJobs] = await Promise.all([api.stats(), api.listJobs()])
@@ -33,15 +37,14 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
-    refresh().catch(() => {})
+    refresh().catch((e) => toast.error(e.message || 'Could not connect to backend.'))
   }, [])
 
-  async function deleteJob(jobId, title) {
-    if (!window.confirm(`Delete "${title}"? This will remove its CVs and rankings too.`)) {
-      return
-    }
+  async function executeDelete() {
+    const { id } = confirmDelete
+    setConfirmDelete(null)
     try {
-      await api.deleteJob(jobId)
+      await api.deleteJob(id)
       toast.success('Job deleted.')
       await refresh()
     } catch (e) {
@@ -79,7 +82,7 @@ export default function Dashboard() {
           </div>
         ) : (
           <ul className="divide-y divide-slate-100">
-            {jobs.slice(0, 8).map((j) => (
+            {(showAll ? jobs : jobs.slice(0, PAGE_SIZE)).map((j) => (
               <li key={j.id} className="px-5 py-3 hover:bg-slate-50">
                 <div className="flex items-center justify-between gap-4">
                   <button
@@ -106,7 +109,7 @@ export default function Dashboard() {
                     <button
                       type="button"
                       className="btn-secondary text-rose-700 border-rose-200 hover:bg-rose-50"
-                      onClick={() => deleteJob(j.id, j.title)}
+                      onClick={() => setConfirmDelete({ id: j.id, title: j.title })}
                     >
                       <Trash2 size={16} /> Delete
                     </button>
@@ -116,7 +119,26 @@ export default function Dashboard() {
             ))}
           </ul>
         )}
+        {jobs.length > PAGE_SIZE && (
+          <div className="px-5 py-3 border-t border-slate-100 text-center">
+            <button
+              className="text-sm text-brand-700 hover:text-brand-900 inline-flex items-center gap-1"
+              onClick={() => setShowAll((v) => !v)}
+            >
+              <ChevronDown size={14} className={showAll ? 'rotate-180' : ''} />
+              {showAll ? 'Show fewer' : `Show all ${jobs.length} jobs`}
+            </button>
+          </div>
+        )}
       </div>
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title="Delete job"
+        message={`Delete "${confirmDelete?.title}"? This will permanently remove all its CVs and rankings.`}
+        onConfirm={executeDelete}
+        onCancel={() => setConfirmDelete(null)}
+      />
     </div>
   )
 }

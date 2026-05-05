@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from db import get_db
 from llm import LLMError, call_llm_json
 from models import CV, DetailedEvaluation, Job
+from parsers import build_candidate_profile
 from prompts import DEEP_EVAL_PROMPT
 
 router = APIRouter(prefix="/api/cvs", tags=["cvs"])
@@ -46,10 +47,11 @@ async def evaluate_cv(cv_id: int, db: Session = Depends(get_db)):
     if not job:
         raise HTTPException(404, "Parent job not found.")
 
+    profile = cv.candidate_profile or build_candidate_profile(cv.raw_text)
     prompt = (
         DEEP_EVAL_PROMPT
         .replace("{JD_JSON_OUTPUT_FROM_PROMPT_1}", job.jd_json)
-        .replace("{CV_TEXT}", cv.raw_text)
+        .replace("{CV_TEXT}", profile)
     )
 
     try:
@@ -69,3 +71,14 @@ async def evaluate_cv(cv_id: int, db: Session = Depends(get_db)):
         (perf_counter() - started) * 1000,
     )
     return evaluation
+
+
+@router.delete("/{cv_id}")
+def delete_cv(cv_id: int, db: Session = Depends(get_db)):
+    cv = db.query(CV).filter(CV.id == cv_id).first()
+    if not cv:
+        raise HTTPException(404, "CV not found.")
+    db.query(DetailedEvaluation).filter(DetailedEvaluation.cv_id == cv_id).delete()
+    db.delete(cv)
+    db.commit()
+    return {"ok": True}

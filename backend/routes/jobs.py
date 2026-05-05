@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from db import get_db
-from llm import LLMError, call_llm_json
+from llm import LLMError, call_llm_json, get_ranking_model
 from models import BulkRanking, CV, DetailedEvaluation, Job
 from parsers import ParseError, build_candidate_profile, extract_text, guess_candidate_name
 from prompts import BULK_RANKING_PROMPT, JD_ANALYSIS_PROMPT
@@ -15,6 +15,9 @@ from schemas import AnalyzeJDRequest, JobCreate
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 log = logging.getLogger(__name__)
+
+RANKING_BATCH_SIZE = 5   # candidates per LLM call — keeps prompt within phi3:mini context
+MAX_CV_UPLOAD = 20       # per-request upload ceiling
 
 
 def _compact_jd_json(jd_json_text: str) -> str:
@@ -32,6 +35,86 @@ def _compact_jd_json(jd_json_text: str) -> str:
         "category_weights": jd.get("category_weights") or {},
     }
     return json.dumps(compact, separators=(",", ":"))
+
+
+def _normalize_ranking_payload(ranking: object) -> list[dict]:
+    if isinstance(ranking, list):
+        return ranking
+    if isinstance(ranking, dict):
+        for key in ("ranking", "candidates", "results", "rankings", "rank"):
+            value = ranking.get(key)
+            if isinstance(value, list):
+                return value
+    return []
+
+
+def _validate_ranking(ranking: list[dict]) -> list[dict]:
+    for row in ranking:
+        score = row.get("score", 0)
+        try:
+            row["score"] = max(0, min(100, int(float(score))))
+        except (TypeError, ValueError):
+            row["score"] = 0
+    ranking.sort(key=lambda r: r["score"], reverse=True)
+    for i, row in enumerate(ranking):
+        row["rank"] = i + 1
+    return ranking
+
+
+_PLACEHOLDER_NAMES = {"full name", "candidate name", "name", "candidate", ""}
+
+
+def _reconcile_names(ranking: list[dict], cv_labels: list[str]) -> list[dict]:
+    """Map LLM-returned names back to actual CV names using case-insensitive lookup.
+
+    When a small model copies the prompt's example placeholder ('Full Name') instead
+    of the real candidate names, this replaces those rows with the actual CV names
+    ordered by descending score so the table is at least populated correctly.
+    """
+    lookup = {label.lower(): label for label in cv_labels}
+
+    for row in ranking:
+        name = (row.get("candidate_name") or "").strip()
+        canonical = lookup.get(name.lower())
+        if canonical:
+            row["candidate_name"] = canonical  # normalise casing
+        # else: leave name as-is; partial-match not attempted to avoid mis-assignment
+
+    # If EVERY row still has an unrecognised / placeholder name the model failed
+    # entirely. Assign cv_labels in score order so the table shows real names.
+    all_unrecognised = all(
+        (row.get("candidate_name") or "").strip().lower() in _PLACEHOLDER_NAMES
+        or (row.get("candidate_name") or "").strip().lower() not in lookup
+        for row in ranking
+    )
+    if all_unrecognised and len(ranking) == len(cv_labels):
+        log.warning("Ranking returned no recognisable names — assigning CV labels by score order.")
+        for row, label in zip(ranking, cv_labels):
+            row["candidate_name"] = label
+
+    return ranking
+
+
+async def _rank_batch(
+    jd_json: str,
+    batch: list[tuple[str, str]],  # (label, profile)
+    model: Optional[str] = None,
+) -> list[dict]:
+    """Rank one batch of candidates and return validated rows."""
+    candidates_block = "\n\n-----\n\n".join(
+        f"{i + 1}. {label}\n{profile}"
+        for i, (label, profile) in enumerate(batch)
+    )
+    prompt = (
+        BULK_RANKING_PROMPT
+        .replace("{JD_JSON}", jd_json)
+        .replace("{CANDIDATES_BLOCK}", candidates_block)
+    )
+    ranking = await call_llm_json(prompt, max_output_tokens=1024, retries=1, model=model)
+    ranking = _normalize_ranking_payload(ranking)
+    ranking = _validate_ranking(ranking)
+    ranking = _reconcile_names(ranking, [label for label, _ in batch])
+    return ranking
 
 
 async def _run_jd_analysis(jd_text: str, jd_title: Optional[str]) -> dict:
@@ -146,8 +229,8 @@ async def upload_cvs(
         raise HTTPException(404, "Job not found.")
     if not files:
         raise HTTPException(400, "No files uploaded.")
-    if len(files) > 10:
-        raise HTTPException(400, "Upload at most 10 CVs at a time.")
+    if len(files) > MAX_CV_UPLOAD:
+        raise HTTPException(400, f"Upload at most {MAX_CV_UPLOAD} CVs at a time.")
 
     created = []
     skipped = 0
@@ -212,44 +295,52 @@ async def rank_candidates(job_id: int, db: Session = Depends(get_db)):
         raise HTTPException(400, "No CVs uploaded for this job yet.")
 
     jd_json = _compact_jd_json(job.jd_json)
-    candidates_block_lines = []
+
+    # Build candidate pairs. Persist full profiles in DB; use short ones for
+    # the ranking prompt so each batch stays well within the model's context.
+    cv_pairs: list[tuple[str, str]] = []
     for idx, cv in enumerate(job.cvs, start=1):
         label = cv.candidate_name or cv.filename or f"Candidate {idx}"
-        profile = cv.candidate_profile or build_candidate_profile(cv.raw_text)
         if not cv.candidate_profile:
-            cv.candidate_profile = profile
-        candidates_block_lines.append(f"{idx}. {label}\n{profile}")
-    candidates_block = "\n\n-----\n\n".join(candidates_block_lines)
+            cv.candidate_profile = build_candidate_profile(cv.raw_text)
+        ranking_profile = build_candidate_profile(cv.raw_text, max_chars=1200)
+        cv_pairs.append((label, ranking_profile))
+    db.commit()  # persist any newly built full profiles before LLM calls
 
-    prompt = (
-        BULK_RANKING_PROMPT
-        .replace("{JD_JSON}", jd_json)
-        .replace("{CANDIDATES_BLOCK}", candidates_block)
-    )
+    model = get_ranking_model()
+    batches = [
+        cv_pairs[i: i + RANKING_BATCH_SIZE]
+        for i in range(0, len(cv_pairs), RANKING_BATCH_SIZE)
+    ]
 
-    try:
-        ranking = await call_llm_json(prompt, max_output_tokens=1024, retries=1)
-    except LLMError as e:
-        raise HTTPException(502, str(e))
+    all_results: list[dict] = []
+    for batch_num, batch in enumerate(batches, start=1):
+        log.info(
+            "rank_candidates job_id=%s batch=%s/%s size=%s",
+            job_id, batch_num, len(batches), len(batch),
+        )
+        try:
+            batch_results = await _rank_batch(jd_json, batch, model=model)
+        except LLMError as e:
+            raise HTTPException(502, str(e))
+        all_results.extend(batch_results)
 
-    # The model may return a dict wrapping the list; normalize.
-    if isinstance(ranking, dict):
-        for key in ("ranking", "candidates", "results", "rankings"):
-            if key in ranking and isinstance(ranking[key], list):
-                ranking = ranking[key]
-                break
+    # Merge all batch scores into a single sorted ranking.
+    all_results.sort(key=lambda r: r["score"], reverse=True)
+    for i, row in enumerate(all_results):
+        row["rank"] = i + 1
 
-    row = BulkRanking(job_id=job_id, ranking_json=json.dumps(ranking))
-    db.add(row)
+    ranking_row = BulkRanking(job_id=job_id, ranking_json=json.dumps(all_results))
+    db.add(ranking_row)
     db.commit()
     log.info(
-        "rank_candidates job_id=%s cvs=%s prompt_chars=%s elapsed_ms=%.1f",
+        "rank_candidates job_id=%s cvs=%s batches=%s elapsed_ms=%.1f",
         job_id,
         len(job.cvs),
-        len(prompt),
+        len(batches),
         (perf_counter() - started) * 1000,
     )
-    return ranking
+    return all_results
 
 
 def _serialize_job(job: Job, db: Session) -> dict:
@@ -274,5 +365,5 @@ def _serialize_job(job: Job, db: Session) -> dict:
             }
             for cv in job.cvs
         ],
-        "latest_ranking": json.loads(latest.ranking_json) if latest else None,
+        "latest_ranking": _normalize_ranking_payload(json.loads(latest.ranking_json)) if latest else None,
     }
