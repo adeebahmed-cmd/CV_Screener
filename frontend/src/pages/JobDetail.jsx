@@ -17,7 +17,7 @@ export default function JobDetail() {
   const [cvFiles, setCvFiles] = useState([])
   const [loadingMsg, setLoadingMsg] = useState(null)
   const [cvDeleteConfirm, setCvDeleteConfirm] = useState(null)
-  const [rerankBanner, setRerankBanner] = useState(false)
+  const [deleteAllConfirm, setDeleteAllConfirm] = useState(false)
 
   async function refresh() {
     const j = await api.getJob(id)
@@ -29,18 +29,31 @@ export default function JobDetail() {
   }, [id])
 
   useEffect(() => {
-    if (!rerankFlagRef.current && job && location.state?.needsRerank && job.latest_ranking) {
-      setRerankBanner(true)
+    if (!rerankFlagRef.current && job && location.state?.needsRerank && job.cvs.length > 0) {
       rerankFlagRef.current = true
+      // Auto-trigger re-rank so recruiter doesn't need to click manually
+      rerank()
     }
   }, [job])
+
+  const BATCH_SIZE = 20
 
   async function uploadAndRank() {
     let uploaded = false
     try {
       if (cvFiles.length > 0) {
-        setLoadingMsg('Parsing and storing CVs…')
-        await api.uploadCVs(id, cvFiles)
+        const batches = []
+        for (let i = 0; i < cvFiles.length; i += BATCH_SIZE) {
+          batches.push(cvFiles.slice(i, i + BATCH_SIZE))
+        }
+        for (let b = 0; b < batches.length; b++) {
+          setLoadingMsg(
+            batches.length > 1
+              ? `Uploading CVs… batch ${b + 1} of ${batches.length} (${Math.round(((b) / batches.length) * 100)}%)`
+              : 'Parsing and storing CVs…'
+          )
+          await api.uploadCVs(id, batches[b])
+        }
         setCvFiles([])
         uploaded = true
         await refresh()
@@ -48,7 +61,7 @@ export default function JobDetail() {
         toast.error('Pick at least one CV.')
         return
       }
-      setLoadingMsg('Ranking candidates against job model… this may take a minute.')
+      setLoadingMsg(`Ranking ${job.cvs.length + (uploaded ? cvFiles.length : 0)} candidates…`)
       await api.rank(id)
       toast.success('Ranking complete.')
       await refresh()
@@ -76,11 +89,22 @@ export default function JobDetail() {
     }
   }
 
+  async function removeAllCVs() {
+    try {
+      const { deleted } = await api.deleteAllCVs(id)
+      toast.success(`${deleted} CV${deleted === 1 ? '' : 's'} deleted.`)
+      await refresh()
+    } catch (e) {
+      toast.error(e.message)
+    } finally {
+      setDeleteAllConfirm(false)
+    }
+  }
+
   async function rerank() {
     try {
-      setLoadingMsg('Re-ranking candidates… this may take a minute.')
+      setLoadingMsg('Keywords updated — re-ranking candidates…')
       await api.rank(id)
-      setRerankBanner(false)
       toast.success('Re-ranking complete.')
       await refresh()
     } catch (e) {
@@ -101,21 +125,6 @@ export default function JobDetail() {
     <div className="space-y-8">
       <LoadingOverlay show={!!loadingMsg} message={loadingMsg} />
 
-      {rerankBanner && (
-        <div className="flex items-center justify-between rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm">
-          <span className="text-amber-800 font-medium">
-            Job model was updated — existing ranking may be outdated.
-          </span>
-          <div className="flex gap-2 shrink-0 ml-4">
-            <button className="btn-secondary py-1 text-xs" onClick={() => setRerankBanner(false)}>
-              Dismiss
-            </button>
-            <button className="btn-primary py-1 text-xs" onClick={rerank} disabled={ranking}>
-              <RefreshCw size={13} /> Re-rank now
-            </button>
-          </div>
-        </div>
-      )}
 
       <div>
         <Link to="/" className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900 mb-2">
@@ -160,7 +169,15 @@ export default function JobDetail() {
 
       {job.cvs.length > 0 && (
         <div className="card p-5">
-          <h2 className="font-semibold text-slate-900 mb-3">Uploaded CVs ({job.cvs.length})</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold text-slate-900">Uploaded CVs ({job.cvs.length})</h2>
+            <button
+              className="btn-secondary text-rose-700 border-rose-200 hover:bg-rose-50 text-xs"
+              onClick={() => setDeleteAllConfirm(true)}
+            >
+              <Trash2 size={13} /> Delete All
+            </button>
+          </div>
           <ul className="divide-y divide-slate-100">
             {job.cvs.map((cv) => (
               <li key={cv.id} className="flex items-center justify-between py-2 gap-4">
@@ -187,9 +204,12 @@ export default function JobDetail() {
       <div className="card p-5">
         <h2 className="font-semibold text-slate-900 mb-1">Upload CVs &amp; rank</h2>
         <p className="text-sm text-slate-600 mb-4">
-          Drop up to 20 CV files. Candidates are ranked in batches of 5 and merged into one list.
+          Drop up to 100 CV files. Large batches are uploaded automatically in groups of 20.
+          {cvFiles.length > 0 && (
+            <span className="ml-2 font-medium text-brand-700">{cvFiles.length} file{cvFiles.length !== 1 ? 's' : ''} selected</span>
+          )}
         </p>
-        <FileDropzone multiple maxFiles={20} files={cvFiles} onChange={setCvFiles} />
+        <FileDropzone multiple maxFiles={100} files={cvFiles} onChange={setCvFiles} />
         <div className="flex justify-end mt-4">
           <button
             className="btn-primary"
@@ -213,6 +233,15 @@ export default function JobDetail() {
         confirmLabel="Remove"
         onConfirm={() => removeCV(cvDeleteConfirm.id)}
         onCancel={() => setCvDeleteConfirm(null)}
+      />
+
+      <ConfirmDialog
+        open={deleteAllConfirm}
+        title="Delete all CVs"
+        message={`Delete all ${job.cvs.length} CVs for this job? Rankings and decisions will also be cleared. This cannot be undone.`}
+        confirmLabel="Delete All"
+        onConfirm={removeAllCVs}
+        onCancel={() => setDeleteAllConfirm(false)}
       />
     </div>
   )

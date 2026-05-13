@@ -7,20 +7,33 @@ KEYWORD RULES — follow exactly
 -------------------------------------
 1. Every keyword MUST be 1–3 words. No phrases, no sentences.
    GOOD: "WASH", "M&E", "Budget Management", "Stakeholder Engagement", "SPSS", "NGO Sector"
-   BAD:  "Experience in project management", "Ability to work with stakeholders", "Strong communication skills"
+   BAD:  "Experience in project management", "Ability to work with stakeholders"
 
-2. Strip lead-in words. Convert the underlying skill/domain noun only.
-   "Experience in budget forecasting"  →  "Budget Forecasting"
-   "Knowledge of WASH programming"     →  "WASH"
-   "Strong leadership skills"          →  "Leadership"
-   "Ability to manage teams"           →  "Team Management"
+2. Strip lead-in words — extract the underlying skill/domain noun only.
+   "Experience in budget forecasting"      →  "Budget Forecasting"
+   "Knowledge of WASH programming"         →  "WASH"
+   "Strong leadership skills"              →  "Leadership"
+   "Ability to manage teams"               →  "Team Management"
+   "Proficiency in Power BI"               →  "Power BI"
+   "Certified Project Management (PMP)"    →  "PMP"
 
-3. Drop generic keywords that apply to every office job:
-   "MS Office", "communication", "teamwork", "proactive", "hard working", "email"
+3. Extract EVERY relevant keyword from ALL of these categories — do not skip any:
+   - Domain expertise (sector-specific knowledge: WASH, Clinical Care, NGO, Banking...)
+   - Capabilities (what they must DO: Budget Management, Proposal Writing, M&E...)
+   - Leadership (Team Leadership, Stakeholder Engagement, Strategic Planning...)
+   - Finance (Grant Management, Financial Reporting, Audit, Procurement...)
+   - Research (Data Analysis, Needs Assessment, Impact Evaluation...)
+   - Tools & Systems (SPSS, Stata, Power BI, SAP, DHIS2, GIS, Tally...)
+   - Qualifications (MBA, PhD, MBBS, CPA, PMP, any certification...)
+   - Soft Skills ONLY if explicitly required (Negotiation, Facilitation...)
 
-4. Return at most 25 keywords. Merge near-duplicates into the stronger term.
+4. Drop only truly generic terms with no discriminating value:
+   "email", "teamwork", "hard working", "proactive", "MS Office" (unless specifically required)
 
-5. Extract ONLY keywords explicitly implied by the JD. Do not invent.
+5. Return up to 40 keywords. Merge only exact near-duplicates.
+   More keywords = better candidate matching. Be thorough.
+
+6. Extract ONLY from the JD. Do not invent keywords not present.
 
 -------------------------------------
 CATEGORIZE each keyword into exactly one:
@@ -28,19 +41,30 @@ CATEGORIZE each keyword into exactly one:
   Research & Innovation | Learning & Development | Tools / Systems | Soft Skills
 
 For each keyword assign:
-  - weight: 1–10 (importance in this JD)
-  - type: "must-have" or "good-to-have"
+  - weight: 1–10 (how critical this specific JD makes it)
+  - type: "must-have" (dealbreaker if missing) or "good-to-have"
 
 Also extract:
   - role: job title from the JD
-  - experience_required: e.g. "5–8 years"
+  - experience_required: e.g. "5–8 years" (copy exact wording from JD)
+  - education_requirements: degree level and fields of study required or preferred
+    - minimum_degree: the floor requirement — one of: "Certificate", "Diploma", "Bachelor's",
+      "Master's", "PhD" — or "" if not stated
+    - preferred_degree: higher preference if mentioned (e.g. "Master's" when JD says
+      "Bachelor's required, Master's preferred") — or "" if same as minimum / not stated
+    - fields: comma-separated string of acceptable fields of study (e.g. "Public Health, Social Work") — "" if none specified
 
 -------------------------------------
-OUTPUT — return ONLY the JSON below, no extra text:
+OUTPUT — return ONLY valid JSON, no extra text, no markdown:
 
 {
   "role": "",
   "experience_required": "",
+  "education_requirements": {
+    "minimum_degree": "",
+    "preferred_degree": "",
+    "fields": ""
+  },
   "keywords": [
     {
       "keyword": "",

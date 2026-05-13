@@ -1,7 +1,65 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { CheckCircle2, XCircle, Save, Plug } from 'lucide-react'
+import { CheckCircle2, XCircle, Save, Plug, RefreshCw } from 'lucide-react'
 import { api } from '../api.js'
+
+function LLMLogTable() {
+  const [logs, setLogs] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  function load() {
+    setLoading(true)
+    api.getLLMLogs(30).then(setLogs).catch(() => {}).finally(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [])
+
+  if (loading) return <div className="text-slate-400 text-sm p-4">Loading logs…</div>
+  if (logs.length === 0) return <div className="text-slate-400 text-sm p-4">No LLM calls recorded yet.</div>
+
+  return (
+    <div>
+      <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+        <h2 className="font-semibold text-slate-900">Recent LLM Calls</h2>
+        <button className="btn-secondary py-1 text-xs" onClick={load}>
+          <RefreshCw size={13} /> Refresh
+        </button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr>
+              {['Time', 'Operation', 'Model', 'Prompt', 'Response', 'Latency', 'Status'].map((h) => (
+                <th key={h} className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {logs.map((l) => (
+              <tr key={l.id} className="hover:bg-slate-50">
+                <td className="px-4 py-2 text-xs text-slate-500 whitespace-nowrap">
+                  {new Date(l.created_at).toLocaleString()}
+                </td>
+                <td className="px-4 py-2 text-xs font-medium text-slate-700">{l.operation}</td>
+                <td className="px-4 py-2 text-xs text-slate-600">{l.model}</td>
+                <td className="px-4 py-2 text-xs text-slate-500">{l.prompt_chars.toLocaleString()} ch</td>
+                <td className="px-4 py-2 text-xs text-slate-500">{l.resp_chars.toLocaleString()} ch</td>
+                <td className="px-4 py-2 text-xs text-slate-500">{l.latency_ms.toLocaleString()} ms</td>
+                <td className="px-4 py-2">
+                  {l.success ? (
+                    <span className="text-xs font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">OK</span>
+                  ) : (
+                    <span className="text-xs font-medium text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded" title={l.error}>Error</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
 
 export default function Settings() {
   const [form, setForm] = useState({ ollama_url: '', model: '', ranking_model: '' })
@@ -133,6 +191,10 @@ export default function Settings() {
           )}
         </div>
       )}
+
+      <div className="card overflow-hidden">
+        <LLMLogTable />
+      </div>
     </div>
   )
 }

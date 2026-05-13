@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { FileText, Keyboard, Save, Sparkles } from 'lucide-react'
@@ -23,6 +23,7 @@ export default function NewJob() {
   const [rawText, setRawText] = useState('')
   const [llmModelName, setLlmModelName] = useState('local Ollama model')
   const [model, setModel] = useState(null)
+  const analyzeInFlight = useRef(false)
 
   useEffect(() => {
     api
@@ -50,6 +51,8 @@ export default function NewJob() {
   }, [id, isEdit])
 
   async function analyze() {
+    if (analyzeInFlight.current) return
+    analyzeInFlight.current = true
     try {
       setAnalyzing(true)
       let result
@@ -75,6 +78,7 @@ export default function NewJob() {
     } catch (e) {
       toast.error(e.message || 'Analysis failed.')
     } finally {
+      analyzeInFlight.current = false
       setAnalyzing(false)
     }
   }

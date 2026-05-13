@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ArrowLeft, Printer, Sparkles } from 'lucide-react'
-import CategoryRadar from '../components/CategoryRadar.jsx'
 import LoadingOverlay from '../components/LoadingOverlay.jsx'
 import { api } from '../api.js'
 import { scoreTone } from '../lib/utils.js'
@@ -90,11 +89,6 @@ export default function CVDetail() {
         </div>
       ) : (
         <>
-          <div className="card p-5">
-            <h2 className="font-semibold text-slate-900 mb-2">Category breakdown</h2>
-            <CategoryRadar scores={evaluation.category_scores || {}} />
-          </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="card p-5">
               <h3 className="font-semibold text-emerald-700 mb-3">

@@ -1,7 +1,21 @@
 const BASE = '/api'
 
+function getToken() {
+  return localStorage.getItem('hr_token')
+}
+
 async function request(path, options = {}) {
-  const res = await fetch(`${BASE}${path}`, options)
+  const token = getToken()
+  const headers = { ...(options.headers || {}) }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(`${BASE}${path}`, { ...options, headers })
+
+  if (res.status === 401) {
+    localStorage.removeItem('hr_token')
+    window.location.href = '/login'
+    return
+  }
   if (!res.ok) {
     let detail = res.statusText
     try {
@@ -19,6 +33,10 @@ export const api = {
   health: () => request('/health'),
   stats: () => request('/stats'),
   ollamaHealth: () => request('/health/ollama'),
+
+  // Auth
+  authConfig: () => fetch('/auth/config').then((r) => r.json()),
+  getMe: () => request('/me'),
 
   // Jobs
   listJobs: () => request('/jobs'),
@@ -64,6 +82,7 @@ export const api = {
   getCV: (id) => request(`/cvs/${id}`),
   evaluateCV: (id) => request(`/cvs/${id}/evaluate`, { method: 'POST' }),
   deleteCV: (id) => request(`/cvs/${id}`, { method: 'DELETE' }),
+  deleteAllCVs: (jobId) => request(`/cvs/job/${jobId}/all`, { method: 'DELETE' }),
 
   // Settings
   getSettings: () => request('/settings'),
@@ -72,5 +91,54 @@ export const api = {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ollama_url, model, ranking_model }),
+    }),
+
+  // Analytics
+  getAnalytics: () => request('/analytics'),
+  getLLMLogs: (limit = 30) => request(`/analytics/llm-logs?limit=${limit}`),
+
+  // Candidate decisions
+  getDecisions: (jobId) => request(`/jobs/${jobId}/decisions`),
+  setDecision: (jobId, candidateName, decision, note = '') =>
+    request(`/jobs/${jobId}/decisions/${encodeURIComponent(candidateName)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision, note }),
+    }),
+
+  // Keyword Repository
+  listRepository: (params = {}) => {
+    const qs = new URLSearchParams()
+    if (params.status) qs.set('status', params.status)
+    if (params.category) qs.set('category', params.category)
+    return request(`/repository${qs.toString() ? '?' + qs : ''}`)
+  },
+  createKeyword: (data) =>
+    request('/repository', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+  updateKeyword: (id, data) =>
+    request(`/repository/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+  deleteKeyword: (id) => request(`/repository/${id}`, { method: 'DELETE' }),
+  approveKeyword: (id) =>
+    request(`/repository/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'approved' }),
+    }),
+
+  // Users (Admin)
+  listUsers: () => request('/users'),
+  updateUserRole: (id, role) =>
+    request(`/users/${id}/role`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role }),
     }),
 }

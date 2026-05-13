@@ -26,6 +26,13 @@ def get_ranking_model() -> str:
     return ranking if ranking else get_ollama_model()
 
 
+def get_jd_model() -> str:
+    """Model used for JD analysis. Defaults to phi3:mini for better extraction accuracy.
+    Override with JD_MODEL env var if needed."""
+    jd = os.getenv("JD_MODEL", "").strip()
+    return jd if jd else "phi3:mini"
+
+
 async def _call_ollama(
     method: str,
     path: str,
@@ -91,7 +98,7 @@ def _extract_json(raw: str) -> Any:
     return json.loads(text)
 
 
-async def call_llm_json(prompt: str, max_output_tokens: int = 4096, retries: int = 2, model: Optional[str] = None, timeout: float = 600.0) -> Any:
+async def call_llm_json(prompt: str, max_output_tokens: int = 4096, retries: int = 2, model: Optional[str] = None, timeout: float = 360.0) -> Any:
     last_err: Optional[Exception] = None
 
     for attempt in range(retries + 1):
@@ -103,6 +110,7 @@ async def call_llm_json(prompt: str, max_output_tokens: int = 4096, retries: int
                     "prompt": prompt,
                     "stream": False,
                     "format": "json",
+                    "keep_alive": "30m",  # keep model loaded for 30 min after last use
                     "options": {
                         "temperature": 0.1,
                         "top_p": 0.9,
@@ -126,6 +134,22 @@ async def call_llm_json(prompt: str, max_output_tokens: int = 4096, retries: int
             await asyncio.sleep(1 + attempt)
 
     raise LLMError(f"LLM call failed after {retries + 1} attempts with Ollama. Last error: {last_err}")
+
+
+async def warmup_model(model: str) -> None:
+    """Send an empty prompt to pre-load *model* into Ollama memory.
+    Errors are logged but never raised — warmup is best-effort.
+    """
+    log.info("warmup_model starting model=%s", model)
+    try:
+        await _post_ollama_json(
+            "/api/generate",
+            {"model": model, "prompt": "", "stream": False, "keep_alive": "30m"},
+            timeout=180.0,
+        )
+        log.info("warmup_model done model=%s", model)
+    except Exception as e:
+        log.warning("warmup_model failed model=%s error=%s", model, e)
 
 
 async def ping_llm() -> tuple[bool, list[str], Optional[str]]:
