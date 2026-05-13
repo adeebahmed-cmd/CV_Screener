@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Document body -->
+  <path d="M15 8 H70 L85 23 V78 Q85 88 75 88 H25 Q15 88 15 78 Z" fill="white" stroke="#2d2d2d" stroke-width="6"/>
+  <!-- Folded corner -->
+  <path d="M70 8 L85 23 H74 Q70 23 70 19 Z" fill="#2d2d2d"/>
+  <!-- Torn bottom-right corner -->
+  <path d="M75 88 Q85 88 85 78 V74 L68 88 Z" fill="#2d2d2d"/>
+  <!-- CV text -->
+  <text x="50" y="62" font-family="Arial, sans-serif" font-size="22" font-weight="700" text-anchor="middle" fill="#2d2d2d">CV</text>
+  <!-- Pen/pencil (top-left, diagonal) -->
+  <g transform="translate(18, 4) rotate(45)">
+    <rect x="-4" y="-18" width="8" height="26" rx="1" fill="#2d2d2d"/>
+    <polygon points="-4,8 4,8 0,16" fill="#2d2d2d"/>
+  </g>
+</svg>
